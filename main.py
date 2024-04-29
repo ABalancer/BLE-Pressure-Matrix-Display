@@ -156,6 +156,25 @@ class Matrix:
         else:
             self.canvas.itemconfigure('pressure_circle', state='hidden')
 
+    def find_base_of_support(self, matrix_data):
+        min_row = float('inf')
+        max_row = -1
+        min_col = float('inf')
+        max_col = -1
+
+        for row in range(self.rows):
+            for column in range(self.columns):
+                if matrix_data[row][column] != 0:
+                    min_row = min(min_row, row)
+                    max_row = max(max_row, row)
+                    min_col = min(min_col, column)
+                    max_col = max(max_col, column)
+
+        return [(min_row, min_col), (min_row, max_col), (max_row, min_col), (max_row, max_col)]
+
+    def draw_base_of_support(self, top_left, top_right, bottom_left, bottom_right):
+        self.canvas.create_line(top_left, top_right, bottom_right, bottom_left, width=5)
+
 
 class App:
     def __init__(self, name):
@@ -276,6 +295,8 @@ class App:
                     matrix_colours = self.grid.match_colours(matrix_data)
                     self.grid.update_matrix(matrix_colours)
                     self.grid.plot_centre_of_pressure(matrix_data)
+                    top_left, top_right, bottom_left, bottom_right = self.grid.find_base_of_support(matrix_data)
+                    self.grid.draw_base_of_support(top_left, top_right, bottom_left, bottom_right)
             self.root.after(5, self._connection_status, queue, process)
         else:
             self.connect_disconnect_buttons_state(False)
