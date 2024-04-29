@@ -5,6 +5,10 @@ from multiprocessing_functions import *
 
 '''
 TODO: 
+make sure each corner is used for base of support placement.
+generate a target that randomly appears within base of support.
+check when user meets target.
+move target and count the time it took for target to be met.
 '''
 
 UUID_CHARACTERISTIC = "2156AF88-FBD2-4B37-BFD9-5C2C7C293D5A"
@@ -92,6 +96,7 @@ class Matrix:
         self.cell_height = self.canvas_height // rows
         self.rectangles = []
         self.colour_map = create_colourmap()
+        self.base_of_support_lines = None
         self.draw()
         self.pressure_circle = 0
 
@@ -170,10 +175,22 @@ class Matrix:
                     min_col = min(min_col, column)
                     max_col = max(max_col, column)
 
-        return [(min_row, min_col), (min_row, max_col), (max_row, min_col), (max_row, max_col)]
+        return [(min_col, min_row), (min_col, max_row), (max_col, min_row), (max_col, max_row)]
 
     def draw_base_of_support(self, top_left, top_right, bottom_left, bottom_right):
-        self.canvas.create_line(top_left, top_right, bottom_right, bottom_left, width=5)
+        def scale_tuple(input_tuple, x_scale, y_scale):
+            output_tuple = (round((input_tuple[0] + 0.5) * x_scale / self.columns),
+                            round((input_tuple[1] + 0.5) * y_scale / self.rows))
+            return output_tuple
+
+        top_left = scale_tuple(top_left, self.canvas_width, self.canvas_height)
+        top_right = scale_tuple(top_right, self.canvas_width, self.canvas_height)
+        bottom_left = scale_tuple(bottom_left, self.canvas_width, self.canvas_height)
+        bottom_right = scale_tuple(bottom_right, self.canvas_width, self.canvas_height)
+        if self.base_of_support_lines is not None:
+            self.canvas.delete(self.base_of_support_lines)
+        self.base_of_support_lines = self.canvas.create_line(top_left, top_right, bottom_right, bottom_left, top_left,
+                                                             width=5)
 
 
 class App:
