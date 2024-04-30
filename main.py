@@ -1,5 +1,6 @@
 import tkinter as tk
 import numpy as np
+import random
 from tkinter import ttk
 from multiprocessing_functions import *
 
@@ -83,6 +84,12 @@ def create_widget(parent, widget_type, *args, **kwargs):
     return widget
 
 
+def scale_tuple(input_tuple, x_scale, y_scale, total_rows, total_columns):
+    output_tuple = (round((input_tuple[0]) * x_scale / total_columns),
+                    round((input_tuple[1]) * y_scale / total_rows))
+    return output_tuple
+
+
 class Matrix:
     def __init__(self, canvas, rows, columns):
         self.canvas = canvas
@@ -97,8 +104,9 @@ class Matrix:
         self.rectangles = []
         self.colour_map = create_colourmap()
         self.base_of_support_lines = None
+        self.target_circle = None
+        self.pressure_circle = None
         self.draw()
-        self.pressure_circle = 0
 
     def draw(self):
         for row in range(self.rows):
@@ -111,9 +119,9 @@ class Matrix:
                 rectangle = self.canvas.create_rectangle(x1, y1, x2, y2, outline="#777777")
                 self.rectangles.append(rectangle)
 
-        self.canvas.create_oval(self.canvas_width / 2 - 5, self.canvas_height / 2 - 5,
-                                self.canvas_width / 2 + 5, self.canvas_height / 2 + 5,
-                                fill='white', outline='', state='hidden', tag='pressure_circle')
+        self.pressure_circle = self.canvas.create_oval(self.canvas_width / 2 - 5, self.canvas_height / 2 - 5,
+                                                       self.canvas_width / 2 + 5, self.canvas_height / 2 + 5,
+                                                       fill='white', outline='', state='hidden', tag='pressure_circle')
 
     def edit_rectangle(self, row, col, color):
         index = row * self.columns + col
@@ -123,8 +131,11 @@ class Matrix:
     def match_colours(self, matrix_data):
         # Map each value in the matrix to a color
         if self._check_matrix_size(matrix_data):
-            colour_matrix = [[self.colour_map[value] for value in row] for row in matrix_data]
-            return colour_matrix
+            try:
+                colour_matrix = [[self.colour_map[value] for value in row] for row in matrix_data]
+                return colour_matrix
+            except IndexError:
+                return None
         else:
             return None
 
@@ -162,9 +173,9 @@ class Matrix:
             self.canvas.itemconfigure('pressure_circle', state='hidden')
 
     def find_base_of_support(self, matrix_data):
-        min_row = float('inf')
+        min_row = self.rows + 1
         max_row = -1
-        min_col = float('inf')
+        min_col = self.columns + 1
         max_col = -1
 
         for row in range(self.rows):
@@ -175,22 +186,64 @@ class Matrix:
                     min_col = min(min_col, column)
                     max_col = max(max_col, column)
 
-        return [(min_col, min_row), (min_col, max_row), (max_col, min_row), (max_col, max_row)]
+        if min_row == self.rows + 1 or max_row == -1 or min_col == self.columns + 1 or max_col == -1:
+            return None, None, None, None
+        else:
+            min_col += 0.5
+            max_col += 0.5
+            min_row += 0.5
+            max_row += 0.5
+            return [(min_col, min_row), (min_col, max_row), (max_col, min_row), (max_col, max_row)]
 
     def draw_base_of_support(self, top_left, top_right, bottom_left, bottom_right):
-        def scale_tuple(input_tuple, x_scale, y_scale):
-            output_tuple = (round((input_tuple[0] + 0.5) * x_scale / self.columns),
-                            round((input_tuple[1] + 0.5) * y_scale / self.rows))
-            return output_tuple
-
-        top_left = scale_tuple(top_left, self.canvas_width, self.canvas_height)
-        top_right = scale_tuple(top_right, self.canvas_width, self.canvas_height)
-        bottom_left = scale_tuple(bottom_left, self.canvas_width, self.canvas_height)
-        bottom_right = scale_tuple(bottom_right, self.canvas_width, self.canvas_height)
         if self.base_of_support_lines is not None:
             self.canvas.delete(self.base_of_support_lines)
-        self.base_of_support_lines = self.canvas.create_line(top_left, top_right, bottom_right, bottom_left, top_left,
-                                                             width=5)
+
+        if top_left is not None and top_right is not None and bottom_left is not None and bottom_right is not None:
+            top_left = scale_tuple(top_left, self.canvas_width, self.canvas_height, self.rows, self.columns)
+            top_right = scale_tuple(top_right, self.canvas_width, self.canvas_height, self.rows, self.columns)
+            bottom_left = scale_tuple(bottom_left, self.canvas_width, self.canvas_height, self.rows, self.columns)
+            bottom_right = scale_tuple(bottom_right, self.canvas_width, self.canvas_height, self.rows, self.columns)
+
+            self.base_of_support_lines = self.canvas.create_line(top_left, top_right,
+                                                                 bottom_right, bottom_left,
+                                                                 top_left,
+                                                                 width=3, fill="white")
+
+    def generate_target(self, top_left, bottom_right):
+        if self.target_circle:
+            self.canvas.delete(self.target_circle)
+            self.target_circle = None
+        if top_left is not None and bottom_right is not None:
+            radius = 20
+            target_location = (random.uniform(top_left[0], bottom_right[0]),
+                               random.uniform(bottom_right[1], top_left[1]))
+            canvas_location = scale_tuple(target_location, self.canvas_width,
+                                          self.canvas_height, self.rows, self.columns)
+            self.target_circle = self.canvas.create_oval(canvas_location[0] - radius, canvas_location[1] - radius,
+                                                         canvas_location[0] + radius, canvas_location[1] + radius,
+                                                         fill="", outline="red", width=3)
+
+    def check_pressure_target_overlap(self):
+        if self.target_circle is not None:
+            # Get coordinates and radii of the circles
+            x1, y1, x2, y2 = self.canvas.coords(self.pressure_circle)
+            pressure_circle_radius = (x2 - x1) / 2
+            pressure_x_centre = x1 + pressure_circle_radius
+            pressure_y_centre = y1 + pressure_circle_radius
+
+            x1, y1, x2, y2 = self.canvas.coords(self.target_circle)
+            target_circle_radius = (x2 - x1) / 2
+            target_x_centre = x1 + target_circle_radius
+            target_y_centre = y1 + target_circle_radius
+
+            # Calculate distance between centers
+            distance = np.sqrt((target_x_centre - pressure_x_centre) ** 2 +
+                               (target_y_centre - pressure_y_centre) ** 2)
+
+            # print(pressure_circle_radius, target_circle_radius, distance)
+            if distance + pressure_circle_radius < target_circle_radius:
+                print("Pressure circle is within target circle")
 
 
 class App:
@@ -314,6 +367,8 @@ class App:
                     self.grid.plot_centre_of_pressure(matrix_data)
                     top_left, top_right, bottom_left, bottom_right = self.grid.find_base_of_support(matrix_data)
                     self.grid.draw_base_of_support(top_left, top_right, bottom_left, bottom_right)
+                    self.grid.generate_target(top_left, bottom_right)
+                    self.grid.check_pressure_target_overlap()
             self.root.after(5, self._connection_status, queue, process)
         else:
             self.connect_disconnect_buttons_state(False)
