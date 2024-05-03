@@ -235,6 +235,7 @@ class Matrix:
             self.target_circle = None
 
     def check_pressure_target_overlap(self):
+        overlap = False
         if self.target_circle is not None:
             # Get coordinates and radii of the circles
             x1, y1, x2, y2 = self.canvas.coords(self.pressure_circle)
@@ -253,7 +254,8 @@ class Matrix:
 
             # print(pressure_circle_radius, target_circle_radius, distance)
             if distance + pressure_circle_radius < target_circle_radius:
-                print("Pressure circle is within target circle")
+                overlap = True
+        return overlap
 
 
 class App:
@@ -389,6 +391,7 @@ class App:
     def start_random_target_task(self):
         if self.random_target_task is None:
             self.random_target_task = self.root.after(1000, self._target_task)
+            self.random_target_task = True
         self.start_random_target_task_button.config(state=tk.DISABLED)
         self.end_task_button.config(state=tk.NORMAL)
 
@@ -439,8 +442,13 @@ class App:
                     self.top_left, top_right, \
                         bottom_left, self.bottom_right = self.grid.find_base_of_support(matrix_data)
                     self.grid.draw_base_of_support(self.top_left, top_right, bottom_left, self.bottom_right)
-                    if self.random_target_task is True:
-                        self.grid.check_pressure_target_overlap()
+                    if self.random_target_task is True:  # Pressure circle within target
+                        if self.grid.check_pressure_target_overlap():
+                            self._end_random_target_task()
+                            self._target_task()
+                            # add 1 to score
+                            # calculate times
+
             self.root.after(5, self._map_updater_task, queue, process)
         else:
             self.end_task()
