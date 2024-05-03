@@ -10,6 +10,13 @@ make sure each corner is used for base of support placement.
 generate a target that randomly appears within base of support.
 check when user meets target.
 move target and count the time it took for target to be met.
+
+If tracking circle outside of base of support, regenerate tracking circle.
+
+Targets caught:
+Average time to catch target:
+
+Tracking accuracy:
 '''
 
 UUID_CHARACTERISTIC = "2156AF88-FBD2-4B37-BFD9-5C2C7C293D5A"
@@ -80,7 +87,7 @@ def create_widget(parent, widget_type, *args, **kwargs):
         widget.config(highlightbackground="#2b2b2b", activebackground="#485254",
                       activeforeground="#a8b5c4", background="#3c3f41", width=17, padx=2, pady=2)
     if widget_type is tk.Listbox:
-        widget.config(exportselection=False, background="#3c3f41")
+        widget.config(exportselection=False, background="#3c3f41", height=5)
     return widget
 
 
@@ -211,9 +218,7 @@ class Matrix:
                                                                  width=3, fill="white")
 
     def generate_target(self, top_left, bottom_right):
-        if self.target_circle:
-            self.canvas.delete(self.target_circle)
-            self.target_circle = None
+        self.remove_target()
         if top_left is not None and bottom_right is not None:
             radius = 20
             target_location = (random.uniform(top_left[0], bottom_right[0]),
@@ -223,6 +228,11 @@ class Matrix:
             self.target_circle = self.canvas.create_oval(canvas_location[0] - radius, canvas_location[1] - radius,
                                                          canvas_location[0] + radius, canvas_location[1] + radius,
                                                          fill="", outline="red", width=3)
+
+    def remove_target(self):
+        if self.target_circle:
+            self.canvas.delete(self.target_circle)
+            self.target_circle = None
 
     def check_pressure_target_overlap(self):
         if self.target_circle is not None:
@@ -248,53 +258,86 @@ class Matrix:
 
 class App:
     def __init__(self, name):
+        # Multiprocessing
         self.timer = [0, 0]
         self.is_data_available = multiprocessing.Value('i', 0)
         self.connected = multiprocessing.Value('i', 0)
         self.lock = multiprocessing.Lock()
+
+        # Bluetooth connection and tasks
         self.selected_device = None
         self.devices = []
+        self.random_target_task = None
+        self.tracking_task = None
+        self.top_left = None
+        self.bottom_right = None
 
+        # Tkinter
         self.root = tk.Tk()
         self.root.config(background="#2b2b2b")
         self.root.title(name)
         self.root.resizable(False, False)
         self.style = ttk.Style()
         self.style.theme_use("clam")
-
         self.root.iconbitmap("icon.ico")
         self.root.protocol("WM_DELETE_WINDOW", self._exit)
 
         # Canvas matrix grid
         self.matrix_canvas = create_widget(self.root, tk.Canvas, width=GRID_WIDTH, height=GRID_HEIGHT, borderwidth=0)
-        self.matrix_canvas.grid(row=0, column=0, columnspan=3)
+        self.matrix_canvas.grid(row=0, column=0)
 
         self.grid = Matrix(self.matrix_canvas, rows=GRID_SIZE, columns=GRID_SIZE)
         self.grid.draw()
 
         self.heat_canvas = create_widget(self.root, tk.Canvas, width=GRID_WIDTH, height=25)
-        self.heat_canvas.grid(row=1, column=0, columnspan=3)
+        self.heat_canvas.grid(row=1, column=0)
         self.create_heatmap_scale(GRID_WIDTH, 25, self.grid.colour_map)
 
+        # Activities
+        self.activities_frame = create_widget(self.root, tk.Frame)
+        self.activities_frame.grid(row=2, column=0, sticky="we")
+        self.activities_frame.columnconfigure((0, 1, 2), weight=1)
+
+        self.activity_label = create_widget(self.activities_frame, tk.Label, text="Activities:")
+        self.activity_label.grid(row=0, column=0, columnspan=3, sticky="w")
+
+        self.start_random_target_task_button = create_widget(self.activities_frame, tk.Button, text="Random Targets",
+                                                             command=self.start_random_target_task)
+        self.start_random_target_task_button.grid(row=1, column=0)
+
+        self.start_tracking_task_button = create_widget(self.activities_frame, tk.Button, text="Tracking Task",
+                                                        command=self.start_tracking_task)
+        self.start_tracking_task_button.grid(row=1, column=1)
+
+        self.end_task_button = create_widget(self.activities_frame, tk.Button, text="End Task",
+                                             command=self.end_task)
+        self.end_task_button.grid(row=1, column=2)
+
         # BLE Box
-        self.ble_label = create_widget(self.root, tk.Label, text="BLE Devices:")
-        self.ble_label.grid(row=2, column=0, columnspan=3, sticky="w")
+        self.ble_frame = create_widget(self.root, tk.Frame)
+        self.ble_frame.grid(row=3, column=0, sticky="we")
+        self.ble_frame.columnconfigure((0, 1, 2), weight=1)
 
-        self.devices_listbox = create_widget(self.root, tk.Listbox)
-        self.devices_listbox.grid(row=3, column=0, columnspan=3, stick="nsew")
+        self.ble_label = create_widget(self.ble_frame, tk.Label, text="BLE Devices:")
+        self.ble_label.grid(row=0, column=0, columnspan=3, sticky="w")
 
-        self.search_button = create_widget(self.root, tk.Button, text="Search", command=self.update_devices_list)
-        self.search_button.grid(row=4, column=0)
+        self.devices_listbox = create_widget(self.ble_frame, tk.Listbox)
+        self.devices_listbox.grid(row=1, column=0, columnspan=3, stick="nsew")
 
-        self.connect_button = create_widget(self.root, tk.Button, text="Connect", command=self.connect_to_device)
-        self.connect_button.grid(row=4, column=1)
+        self.search_button = create_widget(self.ble_frame, tk.Button, text="Search", command=self.update_devices_list)
+        self.search_button.grid(row=2, column=0)
 
-        self.disconnect_button = create_widget(self.root, tk.Button, text="Disconnect",
+        self.connect_button = create_widget(self.ble_frame, tk.Button, text="Connect", command=self.connect_to_device)
+        self.connect_button.grid(row=2, column=1)
+
+        self.disconnect_button = create_widget(self.ble_frame, tk.Button, text="Disconnect",
                                                command=self.disconnect_from_device)
-        self.disconnect_button.grid(row=4, column=2)
-        self.root.columnconfigure((0, 1, 2), weight=1)
+        self.disconnect_button.grid(row=2, column=2)
+        self.root.columnconfigure(0, weight=1)
 
+        # Initialise certain states
         self.connect_disconnect_buttons_state(False)
+        self.end_task_button.config(state=tk.DISABLED)
 
     def run(self):
         self.root.mainloop()
@@ -340,6 +383,34 @@ class App:
         self.connect_button.config(state=tk.DISABLED if state else tk.NORMAL)
         self.search_button.config(state=tk.DISABLED if state else tk.NORMAL)
         self.disconnect_button.config(state=tk.NORMAL if state else tk.DISABLED)
+        self.start_random_target_task_button.config(state=tk.NORMAL if state else tk.DISABLED)
+        self.start_tracking_task_button.config(state=tk.NORMAL if state else tk.DISABLED)
+
+    def start_random_target_task(self):
+        if self.random_target_task is None:
+            self.random_target_task = self.root.after(1000, self._target_task)
+        self.start_random_target_task_button.config(state=tk.DISABLED)
+        self.end_task_button.config(state=tk.NORMAL)
+
+    def start_tracking_task(self):
+        print("TODO")
+
+    def _end_tracking_task(self):
+        self.root.after_cancel(self.tracking_task)
+        self.tracking_task = None
+
+    def _end_random_target_task(self):
+        self.root.after_cancel(self.random_target_task)
+        self.random_target_task = None
+        self.grid.remove_target()
+
+    def end_task(self):
+        if self.random_target_task is not None:
+            self._end_random_target_task()
+            self.start_random_target_task_button.config(state=tk.NORMAL)
+        if self.tracking_task is not None:
+            self._end_tracking_task()
+        self.end_task_button.config(state=tk.DISABLED)
 
     # Function to connect to device
     def connect_to_device(self):
@@ -350,10 +421,10 @@ class App:
             self.selected_device = self.devices[self.devices_listbox.curselection()[0]][0]
             process = process_handler(target=connect, args=(queue, lock, self.connected, self.is_data_available,
                                                             self.selected_device, UUID_CHARACTERISTIC))
-            self.root.after(5, self._connection_status, queue, process)
+            self.root.after(5, self._map_updater_task, queue, process)
 
     # Recursive Loop for updating the matrix when connected to device
-    def _connection_status(self, queue, process):
+    def _map_updater_task(self, queue, process):
         if process.is_alive():
             if self.is_data_available.value:
                 self.lock.acquire()
@@ -365,13 +436,20 @@ class App:
                     matrix_colours = self.grid.match_colours(matrix_data)
                     self.grid.update_matrix(matrix_colours)
                     self.grid.plot_centre_of_pressure(matrix_data)
-                    top_left, top_right, bottom_left, bottom_right = self.grid.find_base_of_support(matrix_data)
-                    self.grid.draw_base_of_support(top_left, top_right, bottom_left, bottom_right)
-                    self.grid.generate_target(top_left, bottom_right)
-                    self.grid.check_pressure_target_overlap()
-            self.root.after(5, self._connection_status, queue, process)
+                    self.top_left, top_right, \
+                        bottom_left, self.bottom_right = self.grid.find_base_of_support(matrix_data)
+                    self.grid.draw_base_of_support(self.top_left, top_right, bottom_left, self.bottom_right)
+                    if self.random_target_task is True:
+                        self.grid.check_pressure_target_overlap()
+            self.root.after(5, self._map_updater_task, queue, process)
         else:
+            self.end_task()
             self.connect_disconnect_buttons_state(False)
+
+    # Recursive loop for changing the target location if the user takes too long to reach it.
+    def _target_task(self):
+        self.grid.generate_target(self.top_left, self.bottom_right)
+        self.random_target_task = self.root.after(10000, self._target_task)
 
     # Function to disconnect from the connected device
     def disconnect_from_device(self):
