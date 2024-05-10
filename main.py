@@ -1,6 +1,7 @@
 import tkinter as tk
 import numpy as np
 import random
+import time
 from tkinter import ttk
 from multiprocessing_functions import *
 
@@ -269,6 +270,8 @@ class App:
         # Bluetooth connection and tasks
         self.selected_device = None
         self.devices = []
+        self.task_start_time = 0
+        self.random_target_task_score = 0
         self.random_target_task = None
         self.tracking_task = None
         self.top_left = None
@@ -314,6 +317,11 @@ class App:
         self.end_task_button = create_widget(self.activities_frame, tk.Button, text="End Task",
                                              command=self.end_task)
         self.end_task_button.grid(row=1, column=2)
+
+        self.score_label = create_widget(self.activities_frame, tk.Label, text=" ")
+        self.score_label.grid(row=2, column=0, sticky="w")
+        self.time_label = create_widget(self.activities_frame, tk.Label, text=" ")
+        self.time_label.grid(row=2, column=1, sticky="w")
 
         # BLE Box
         self.ble_frame = create_widget(self.root, tk.Frame)
@@ -392,6 +400,8 @@ class App:
         if self.random_target_task is None:
             self.random_target_task = self.root.after(1000, self._target_task)
             self.random_target_task = True
+            self.task_start_time = time.time()
+            self.random_target_task_score = 0
         self.start_random_target_task_button.config(state=tk.DISABLED)
         self.end_task_button.config(state=tk.NORMAL)
 
@@ -414,6 +424,14 @@ class App:
         if self.tracking_task is not None:
             self._end_tracking_task()
         self.end_task_button.config(state=tk.DISABLED)
+
+    def set_activity_score_labels(self, score, time):
+        self.score_label.config(text="Score: %d" % score)
+        self.time_label.config(text="Average Time: %f" % time)
+
+    def reset_activity_score_labels(self):
+        self.score_label.config(text=" ")
+        self.time_label.config(text=" ")
 
     # Function to connect to device
     def connect_to_device(self):
@@ -445,9 +463,10 @@ class App:
                     if self.random_target_task is True:  # Pressure circle within target
                         if self.grid.check_pressure_target_overlap():
                             self._end_random_target_task()
+                            self.random_target_task_score += 1
+                            target_time = time.time() - self.task_start_time
                             self._target_task()
-                            # add 1 to score
-                            # calculate times
+                            self.set_activity_score_labels(self.random_target_task_score, target_time)
 
             self.root.after(5, self._map_updater_task, queue, process)
         else:
