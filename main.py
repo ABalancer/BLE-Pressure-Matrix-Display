@@ -10,12 +10,12 @@ TODO:
 make sure each corner is used for base of support placement.
 generate a target that randomly appears within base of support.
 check when user meets target.
-move target and count the time it took for target to be met.
+move target and count the completion_time it took for target to be met.
 
 If tracking circle outside of base of support, regenerate tracking circle.
 
 Targets caught:
-Average time to catch target:
+Average completion_time to catch target:
 
 Tracking accuracy:
 '''
@@ -64,8 +64,8 @@ def remap_matrix(matrix, threshold):
     np_matrix = np.array(matrix)
     np_matrix -= threshold
     remapped_matrix = 2*np.where(np_matrix < 0, 0, np_matrix)
-    # return np.fliplr(remapped_matrix)
-    return remapped_matrix
+    return np.fliplr(remapped_matrix)
+    #return remapped_matrix
 
 
 def create_colourmap():
@@ -222,13 +222,15 @@ class Matrix:
         self.remove_target()
         if top_left is not None and bottom_right is not None:
             radius = 20
-            target_location = (random.uniform(top_left[0], bottom_right[0]),
-                               random.uniform(bottom_right[1], top_left[1]))
-            canvas_location = scale_tuple(target_location, self.canvas_width,
+            scaled_top_left = scale_tuple(top_left, self.canvas_width,
                                           self.canvas_height, self.rows, self.columns)
-            self.target_circle = self.canvas.create_oval(canvas_location[0] - radius, canvas_location[1] - radius,
-                                                         canvas_location[0] + radius, canvas_location[1] + radius,
-                                                         fill="", outline="red", width=3)
+            scaled_bottom_right = scale_tuple(bottom_right, self.canvas_width,
+                                              self.canvas_height, self.rows, self.columns)
+            target_location = (random.uniform(scaled_top_left[0] + radius, scaled_bottom_right[0] - radius),
+                               random.uniform(scaled_bottom_right[1] - radius, scaled_top_left[1] + radius))
+            self.target_circle = self.canvas.create_oval(target_location[0] - radius, target_location[1] - radius,
+                                                         target_location[0] + radius, target_location[1] + radius,
+                                                         fill="", outline="green", width=4)
 
     def remove_target(self):
         if self.target_circle:
@@ -321,7 +323,7 @@ class App:
         self.score_label = create_widget(self.activities_frame, tk.Label, text=" ")
         self.score_label.grid(row=2, column=0, sticky="w")
         self.time_label = create_widget(self.activities_frame, tk.Label, text=" ")
-        self.time_label.grid(row=2, column=1, sticky="w")
+        self.time_label.grid(row=2, column=1, columnspan=2, sticky="w")
 
         # BLE Box
         self.ble_frame = create_widget(self.root, tk.Frame)
@@ -402,6 +404,7 @@ class App:
             self.random_target_task = True
             self.task_start_time = time.time()
             self.random_target_task_score = 0
+            self.set_activity_score_labels(self.random_target_task_score, 0.0)
         self.start_random_target_task_button.config(state=tk.DISABLED)
         self.end_task_button.config(state=tk.NORMAL)
 
@@ -425,9 +428,9 @@ class App:
             self._end_tracking_task()
         self.end_task_button.config(state=tk.DISABLED)
 
-    def set_activity_score_labels(self, score, time):
+    def set_activity_score_labels(self, score, completion_time):
         self.score_label.config(text="Score: %d" % score)
-        self.time_label.config(text="Average Time: %f" % time)
+        self.time_label.config(text="Average Time: %.2f seconds" % completion_time)
 
     def reset_activity_score_labels(self):
         self.score_label.config(text=" ")
@@ -460,13 +463,13 @@ class App:
                     self.top_left, top_right, \
                         bottom_left, self.bottom_right = self.grid.find_base_of_support(matrix_data)
                     self.grid.draw_base_of_support(self.top_left, top_right, bottom_left, self.bottom_right)
-                    if self.random_target_task is True:  # Pressure circle within target
+                    if self.random_target_task is not None:  # Pressure circle within target
                         if self.grid.check_pressure_target_overlap():
                             self._end_random_target_task()
                             self.random_target_task_score += 1
-                            target_time = time.time() - self.task_start_time
+                            average_target_time = (time.time() - self.task_start_time) / self.random_target_task_score
                             self._target_task()
-                            self.set_activity_score_labels(self.random_target_task_score, target_time)
+                            self.set_activity_score_labels(self.random_target_task_score, average_target_time)
 
             self.root.after(5, self._map_updater_task, queue, process)
         else:
@@ -475,8 +478,9 @@ class App:
 
     # Recursive loop for changing the target location if the user takes too long to reach it.
     def _target_task(self):
+        reset_time = 15
         self.grid.generate_target(self.top_left, self.bottom_right)
-        self.random_target_task = self.root.after(10000, self._target_task)
+        self.random_target_task = self.root.after(int(reset_time * 1000), self._target_task)
 
     # Function to disconnect from the connected device
     def disconnect_from_device(self):
