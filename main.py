@@ -62,10 +62,10 @@ def interpolate_colours(value):
 def remap_matrix(matrix, threshold):
     # Convert the matrix to a NumPy array
     np_matrix = np.array(matrix)
-    #np_matrix -= threshold
-    #remapped_matrix = 2*np.where(np_matrix < 0, 0, np_matrix)
+    np_matrix -= threshold
+    remapped_matrix = 2*np.where(np_matrix < 0, 0, np_matrix)
     # return np.fliplr(remapped_matrix)
-    return np_matrix #remapped_matrix
+    return remapped_matrix
 
 
 def create_colourmap():
