@@ -230,7 +230,7 @@ class Matrix:
                                random.uniform(scaled_bottom_right[1] - radius, scaled_top_left[1] + radius))
             self.target_circle = self.canvas.create_oval(target_location[0] - radius, target_location[1] - radius,
                                                          target_location[0] + radius, target_location[1] + radius,
-                                                         fill="", outline="green", width=4)
+                                                         fill="", outline="lightgreen", width=4)
 
     def remove_target(self):
         if self.target_circle:
